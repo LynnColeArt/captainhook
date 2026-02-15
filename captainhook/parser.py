@@ -1,7 +1,9 @@
 """
 Tag parser for cheatcode syntax.
 
-Supports: [namespace:action param1 param2 ...]
+Supports both singles and doubles (like XML):
+- Singles (self-closing): [namespace:action params /]
+- Doubles (container): [tag]content[/tag]
 """
 
 import re
