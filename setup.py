@@ -7,9 +7,7 @@ setup(
     author="LynnColeArt",
     packages=find_packages(),
     python_requires=">=3.8",
-    install_requires=[
-        "spindle-python>=0.1.0",
-    ],
+    install_requires=[],
     extras_require={
         "dev": ["pytest", "pytest-asyncio", "black", "mypy"],
     },

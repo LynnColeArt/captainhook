@@ -132,6 +132,40 @@ def echo():
 result = ctx.execute("[echo /]")  # Returns "HELLO"
 ```
 
+## Busy38-compatible SDK API
+
+CaptainHook includes a compatibility layer so external systems can use Busy-style
+hook and namespace-extension APIs without depending on the full Busy runtime.
+
+```python
+from captainhook import (
+    on_pre_cheatcode_execute,
+    on_post_cheatcode_execute,
+    HookPoints,
+    busy38_hooks,
+    register_namespace,
+    execute_cheatcode,
+)
+
+
+@on_pre_cheatcode_execute
+def pre_hook(namespace, action, attrs, context=None):
+    print("pre", namespace, action, attrs)
+
+
+class DemoHandler:
+    def execute(self, action, **kwargs):
+        return {"action": action, "kwargs": kwargs}
+
+
+register_namespace("demo", DemoHandler())
+result = execute_cheatcode("demo", "status", {"mode": "active"})
+print(result)
+
+print(HookPoints.PRE_CHEATCODE_EXECUTE)
+print("registry", busy38_hooks.list_hooks())
+```
+
 ## Flask Integration
 
 ```python

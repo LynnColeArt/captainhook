@@ -34,13 +34,13 @@ class Tag:
 
 
 # Container tag pattern: [tag]content[/tag]
-CONTAINER_PATTERN = r'\[(\w+)\](.*?)\[/\1\]'
+CONTAINER_PATTERN = r"\[(\w+)\](.*?)\[/\1\]"
 
 # Self-closing pattern: [action /] or [action/]
-SELF_CLOSING_PATTERN = r'\[(\w+)\s*/?\]'
+SELF_CLOSING_PATTERN = r"\[(\w+)\s*/\]"
 
 # Cheatcode pattern: [namespace:action attr="value" key=value /]
-CHEATCODE_PATTERN = r'\[(\w+):(\w+)\s+([^\]]*)/\]'
+CHEATCODE_PATTERN = r"\[(\w+):(\w+)\s+([^\]]*?)/\]"
 
 # Attribute pattern: key="value" or key=value
 ATTR_PATTERN = r'(\w+)=(?:"([^"]*)"|([^\s\]]*))'
@@ -153,19 +153,19 @@ def parse_tag(tag_string: str) -> Tag:
     - [tag]content[/tag] - Container (if content provided)
     """
     # Try cheatcode first
-    if ':' in tag_string and re.match(CHEATCODE_PATTERN, tag_string):
+    if ":" in tag_string and re.fullmatch(CHEATCODE_PATTERN, tag_string.strip(), re.DOTALL):
         tags = parse_cheatcodes(tag_string)
         if tags:
             return tags[0]
     
     # Try self-closing
-    if re.match(SELF_CLOSING_PATTERN, tag_string):
+    if re.fullmatch(SELF_CLOSING_PATTERN, tag_string.strip()):
         tags = parse_self_closing(tag_string)
         if tags:
             return tags[0]
     
     # Try container
-    if re.match(CONTAINER_PATTERN, tag_string, re.DOTALL):
+    if re.fullmatch(CONTAINER_PATTERN, tag_string.strip(), re.DOTALL):
         tags = parse_container_tags(tag_string)
         if tags:
             return tags[0]
