@@ -193,6 +193,23 @@ cd tests
 pytest -v
 ```
 
+## AI-Generated / Automated Contributions
+
+Automated code generation and AI-assisted submissions are welcome.
+
+For production code, placeholders are not acceptable.
+
+- Unit tests may use mocks and stubs.
+- Runtime code must be functional and complete before merge.
+- New functionality must include unit tests (or updates to existing tests) that cover the new behavior.
+- All relevant tests must pass before merge.
+
+Before submitting generated changes, verify:
+
+- No production file contains temporary placeholders (`TODO`, `FIXME`, `NotImplementedError`, `return None` placeholders).
+- Mock/stub logic is limited to tests and test fixtures.
+- Edge cases and failure paths are explicit, not hidden behind placeholders.
+
 ## License
 
 GPL-3.0-only
