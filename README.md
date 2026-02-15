@@ -203,6 +203,7 @@ For production code, placeholders are not acceptable.
 - Runtime code must be functional and complete before merge.
 - New functionality must include unit tests (or updates to existing tests) that cover the new behavior.
 - Failure states are telemetry and should remain visible; do not introduce graceful-fallback behavior that hides runtime failures.
+- Do not merge substantial architectural changes without a tracked issue number or an associated public forum thread.
 - All relevant tests must pass before merge.
 
 Before submitting generated changes, verify:
