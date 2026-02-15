@@ -14,7 +14,7 @@ pip install captainhook
 import captainhook
 
 # Execute a cheatcode
-result = captainhook.execute("[browser:navigate https://example.com]")
+result = captainhook.execute("[browser:navigate https://example.com /]")
 print(result)
 ```
 
@@ -29,7 +29,7 @@ async def navigate(url: str):
     return {"status": "success", "url": url}
 
 # Execute
-result = captainhook.execute("[browser:navigate https://example.com]")
+result = captainhook.execute("[browser:navigate https://example.com /]")
 ```
 
 ## Context-Based Execution
@@ -46,7 +46,7 @@ def add(a: int, b: int):
     return int(a) + int(b)
 
 # Execute within context
-result = ctx.execute("[math:add 5 3]")
+result = ctx.execute("[math:add 5 3 /]")
 print(result)  # 8
 ```
 
@@ -64,7 +64,7 @@ async def fetch_data(url: str):
             return await response.text()
 
 # Async execution
-result = await captainhook.execute_async("[fetch:data https://api.example.com/data]")
+result = await captainhook.execute_async("[fetch:data https://api.example.com/data /]")
 ```
 
 ## Hooks and Filters
@@ -79,7 +79,7 @@ captainhook.hooks.add_action("before_execute", lambda tag: print(f"Executing: {t
 captainhook.filters.add_filter("result", lambda r: r.upper())
 
 # Execute - hooks and filters run automatically
-result = captainhook.execute("[echo hello]")
+result = captainhook.execute("[echo hello /]")
 ```
 
 ## Integration Examples
@@ -127,7 +127,7 @@ if __name__ == "__main__":
 ```
 
 ```bash
-$ python cli.py "[browser:screenshot https://example.com]"
+$ python cli.py "[browser:screenshot https://example.com /]"
 ```
 
 ## Advanced Usage

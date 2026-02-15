@@ -26,7 +26,7 @@ def parse_tag(tag_string: str) -> Tag:
     Parse a cheatcode tag string.
     
     Args:
-        tag_string: String like "[browser:navigate https://example.com]"
+        tag_string: String like "[browser:navigate https://example.com /]"
         
     Returns:
         Tag object with namespace, action, and params
@@ -34,10 +34,10 @@ def parse_tag(tag_string: str) -> Tag:
     Raises:
         ValueError: If tag format is invalid
     """
-    # Strip brackets
-    match = re.match(r'^\[(.+?)\]$', tag_string.strip())
+    # Strip brackets - supports both [/] and ] endings for flexibility
+    match = re.match(r'^\[(.+?)(?:\s*/\]|\])$', tag_string.strip())
     if not match:
-        raise ValueError(f"Invalid tag format: {tag_string}. Expected [namespace:action ...]")
+        raise ValueError(f"Invalid tag format: {tag_string}. Expected [namespace:action ... /]")
     
     content = match.group(1)
     
@@ -65,7 +65,7 @@ def parse_tag(tag_string: str) -> Tag:
 
 
 def is_valid_tag(tag_string: str) -> bool:
-    """Check if a string is a valid tag format."""
+    """Check if a string is a valid cheatcode format."""
     try:
         parse_tag(tag_string)
         return True
