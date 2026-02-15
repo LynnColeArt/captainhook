@@ -4,6 +4,13 @@ This script connects to an OpenAI-compatible inference endpoint and runs a
 turn-based loop. The model is prompted to emit a small set of cheatcodes and
 `[next /]` as the control-flow tag to continue.
 
+How to read this file:
+1. Register tool handlers with `@captainhook.register(...)`.
+2. Send a user prompt to a chat-completion endpoint.
+3. Parse returned text for CaptainHook tags.
+4. Execute all tags with `captainhook.execute_text(...)`.
+5. Continue only when `[next /]` appears in that assistant turn.
+
 Example:
   python examples/inference_loop_demo.py \
     --url http://localhost:8000/v1/chat/completions \
@@ -45,7 +52,10 @@ def tool_note(message: str = "") -> Dict[str, Any]:
 
 @captainhook.register("next")
 def control_next() -> Dict[str, Any]:
-    """Busy-style continue marker."""
+    """Busy-style continue marker.
+
+    Returning structured output makes it easy to inspect what happened.
+    """
     return {"_control": "next"}
 
 
@@ -94,6 +104,7 @@ def call_inference(
 
 
 def build_system_prompt() -> str:
+    """Prompt for the model with the exact tag contract."""
     return (
         "You are a tiny planner in a demo loop.\n"
         "When you want the system to do work, emit tags only in this form:\n"
@@ -105,6 +116,10 @@ def build_system_prompt() -> str:
 
 
 def run_demo_loop(args: argparse.Namespace) -> None:
+    # State that goes to the model each turn:
+    # - system prompt (tool contract)
+    # - original user request
+    # - assistant text and tool outputs from previous turns
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": args.prompt},
@@ -120,11 +135,14 @@ def run_demo_loop(args: argparse.Namespace) -> None:
         )
         print(f"LLM output:\n{model_text}\n")
 
+        # Parse tags from the assistant turn. If no tags are present, we can't
+        # drive any more tool calls or loop control, so we exit.
         tags = captainhook.parse_all(model_text)
         if not tags:
             print("No tags found in response. Ending loop.")
             break
 
+        # Execute all tags found in this turn.
         results = captainhook.execute_text(model_text)
         results_payload = []
         continue_requested = False
@@ -137,6 +155,7 @@ def run_demo_loop(args: argparse.Namespace) -> None:
 
         print(f"Tool results: {json.dumps(results_payload, indent=2)}")
 
+        # Push both the assistant output and tool results back for the next turn.
         messages.append({"role": "assistant", "content": model_text})
         messages.append(
             {
