@@ -160,4 +160,4 @@ async def log_execution(tag, next):
 
 ## License
 
-MIT
+GPL-3.0-only
