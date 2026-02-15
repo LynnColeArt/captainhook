@@ -1,6 +1,6 @@
 # CaptainHook 🪝
 
-> Cheatcode-style hooks, filters, and tags for Python - with an OpenAI-style API
+> Cheatcode-style extensibility for Python - like Busy38
 
 ## Installation
 
@@ -13,18 +13,9 @@ pip install captainhook
 ```python
 import captainhook
 
-# Execute a cheatcode
-result = captainhook.execute("[browser:navigate https://example.com /]")
-print(result)
-```
-
-## Register Custom Handlers
-
-```python
-import captainhook
-
+# Register a cheatcode
 @captainhook.register("browser:navigate")
-async def navigate(url: str):
+def navigate(url):
     print(f"Navigating to {url}")
     return {"status": "success", "url": url}
 
@@ -32,7 +23,54 @@ async def navigate(url: str):
 result = captainhook.execute("[browser:navigate https://example.com /]")
 ```
 
-## Context-Based Execution
+## Tag Types
+
+CaptainHook supports both **singles** and **doubles** (like XML):
+
+### Singles (Self-Closing)
+```python
+[action /]                    # Simple tag
+[namespace:action params /]   # Cheatcode with params
+[next /]                      # Control flow
+```
+
+### Doubles (Container)
+```python
+[mission]Spawn sub-agent[/mission]
+[tool]Execute code[/tool]
+[echo]Content to process[/echo]
+```
+
+## Examples
+
+### Basic Usage
+
+```python
+import captainhook
+
+# Self-closing tag
+@captainhook.register("hello")
+def hello():
+    return "Hello, World!"
+
+result = captainhook.execute("[hello /]")
+
+# Cheatcode with parameters
+@captainhook.register("math:add")
+def add(a, b):
+    return int(a) + int(b)
+
+result = captainhook.execute("[math:add 5 3 /]")
+
+# Container tag
+@captainhook.register_container("echo")
+def echo(content):
+    return f"ECHO: {content}"
+
+result = captainhook.execute("[echo]Hello World[/echo]")
+```
+
+### Context-Based Execution
 
 ```python
 import captainhook
@@ -40,122 +78,85 @@ import captainhook
 # Create isolated context
 ctx = captainhook.Context()
 
-# Register handlers in this context only
 @ctx.register("math:add")
-def add(a: int, b: int):
+def add(a, b):
     return int(a) + int(b)
 
-# Execute within context
-result = ctx.execute("[math:add 5 3 /]")
-print(result)  # 8
+@ctx.register_container("code")
+def run_code(code):
+    return eval(code)
+
+# Execute multiple tags
+text = """
+[math:add 10 20 /]
+[code]2 + 2[/code]
+"""
+results = ctx.execute_text(text)
 ```
 
-## Async Support
+### Async Support
 
 ```python
 import captainhook
 import asyncio
 
 @captainhook.register("fetch:data")
-async def fetch_data(url: str):
+async def fetch_data(url):
     import aiohttp
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             return await response.text()
 
 # Async execution
-result = await captainhook.execute_async("[fetch:data https://api.example.com/data /]")
+result = await captainhook.execute_async("[fetch:data https://api.example.com /]")
 ```
 
-## Hooks and Filters
+### Hooks and Filters
 
 ```python
 import captainhook
 
-# Add action hook
-captainhook.hooks.add_action("before_execute", lambda tag: print(f"Executing: {tag}"))
+ctx = captainhook.Context()
 
-# Add filter
-captainhook.filters.add_filter("result", lambda r: r.upper())
+# Add hooks
+ctx.hooks.add_action("before_execute", lambda tag: print(f"Before: {tag}"))
+ctx.hooks.add_action("after_execute", lambda tag, result: print(f"After: {result}"))
 
-# Execute - hooks and filters run automatically
-result = captainhook.execute("[echo hello /]")
+# Add filters
+ctx.filters.add_filter("result", lambda r: r.upper())
+
+@ctx.register("echo")
+def echo():
+    return "hello"
+
+result = ctx.execute("[echo /]")  # Returns "HELLO"
 ```
 
-## Integration Examples
-
-### Flask Integration
+## Flask Integration
 
 ```python
-from flask import Flask
+from flask import Flask, request, jsonify
 import captainhook
 
 app = Flask(__name__)
 
+@captainhook.register("browser:navigate")
+def navigate(url):
+    return {"action": "navigate", "url": url}
+
 @app.route("/execute", methods=["POST"])
 def execute():
-    tag = request.json.get("tag")
+    data = request.get_json()
+    tag = data.get("tag")
     result = captainhook.execute(tag)
-    return jsonify(result)
+    return jsonify({"result": result})
 ```
 
-### FastAPI Integration
-
-```python
-from fastapi import FastAPI
-import captainhook
-
-app = FastAPI()
-
-@app.post("/execute")
-async def execute(tag: str):
-    result = await captainhook.execute_async(tag)
-    return {"result": result}
-```
-
-### CLI Tool
-
-```python
-import captainhook
-import sys
-
-# cli.py
-if __name__ == "__main__":
-    tag = sys.argv[1]
-    result = captainhook.execute(tag)
-    print(result)
-```
+## Testing
 
 ```bash
-$ python cli.py "[browser:screenshot https://example.com /]"
-```
-
-## Advanced Usage
-
-### Custom Parsers
-
-```python
-import captainhook
-
-@captainhook.parser
-def parse_custom_syntax(tag: str):
-    # Custom parsing logic
-    if tag.startswith("!"):
-        return captainhook.Tag("custom", tag[1:])
-    return None
-```
-
-### Middleware
-
-```python
-import captainhook
-
-@captainhook.middleware
-async def log_execution(tag, next):
-    print(f"Before: {tag}")
-    result = await next(tag)
-    print(f"After: {result}")
-    return result
+cd tests
+pytest -v
 ```
 
 ## License

@@ -1,56 +1,47 @@
 """
-CaptainHook - Cheatcode-style hooks, filters, and tags for Python
+CaptainHook - Cheatcode-style extensibility for Python
+
+Reference: Busy38 cheatcode system
 """
 
-from .core import execute, execute_async, register, Context
+from .core import (
+    Context,
+    register,
+    register_container,
+    execute,
+    execute_text,
+    execute_async,
+)
+from .parser import (
+    Tag,
+    TagType,
+    parse_tag,
+    parse_all,
+    is_valid_tag,
+    remove_tags,
+)
 from .hooks import Hooks
 from .filters import Filters
-from .parser import Tag, parse_tag
 
 __version__ = "0.1.0"
+__license__ = "GPL-3.0-only"
+
 __all__ = [
-    "execute",
-    "execute_async", 
-    "register",
+    # Core
     "Context",
+    "register",
+    "register_container",
+    "execute",
+    "execute_text",
+    "execute_async",
+    # Parser
+    "Tag",
+    "TagType",
+    "parse_tag",
+    "parse_all",
+    "is_valid_tag",
+    "remove_tags",
+    # Hooks/Filters
     "Hooks",
     "Filters",
-    "Tag",
-    "parse_tag",
-    "hooks",
-    "filters",
 ]
-
-# Global instances
-hooks = Hooks()
-filters = Filters()
-
-
-def execute(tag_string: str, **kwargs):
-    """
-    Execute a cheatcode tag.
-    
-    Args:
-        tag_string: The tag to execute (e.g., "[browser:navigate https://example.com]")
-        **kwargs: Additional context
-        
-    Returns:
-        The result of the execution
-    """
-    tag = parse_tag(tag_string)
-    return _execute_tag(tag, **kwargs)
-
-
-async def execute_async(tag_string: str, **kwargs):
-    """Async version of execute."""
-    tag = parse_tag(tag_string)
-    return await _execute_tag_async(tag, **kwargs)
-
-
-# Internal execution functions (to be implemented)
-def _execute_tag(tag, **kwargs):
-    raise NotImplementedError("Core execution not yet implemented")
-
-
-async def _execute_tag_async(tag, **kwargs):
-    raise NotImplementedError("Async execution not yet implemented")
