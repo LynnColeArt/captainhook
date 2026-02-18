@@ -14,6 +14,7 @@ from .core import (
     register_namespace,
     unregister_namespace,
     execute_cheatcode,
+    get_no_response,
 )
 from .parser import (
     Tag,
@@ -31,6 +32,7 @@ from .busy_bridge import (
     HookPoints,
     NamespaceHandler,
     NamespaceRegistry,
+    get_namespace_metadata,
     on_pre_agent_execute,
     on_post_agent_execute,
     on_pre_llm_call,
@@ -57,6 +59,7 @@ from .busy_bridge import (
     list_busy38_hooks,
     get_busy38_stats,
     get_namespace,
+    should_suppress_cheatcode_response,
 )
 
 __version__ = "0.1.0"
@@ -73,6 +76,7 @@ __all__ = [
     "register_namespace",
     "unregister_namespace",
     "execute_cheatcode",
+    "get_no_response",
     # Parser
     "Tag",
     "TagType",
@@ -115,4 +119,6 @@ __all__ = [
     "list_busy38_hooks",
     "get_busy38_stats",
     "get_namespace",
+    "get_namespace_metadata",
+    "should_suppress_cheatcode_response",
 ]

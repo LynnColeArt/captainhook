@@ -9,7 +9,9 @@ How to read this file:
 2. Send a user prompt to a chat-completion endpoint.
 3. Parse returned text for CaptainHook tags.
 4. Execute all tags with `captainhook.execute_text(...)`.
-5. Continue only when `[next /]` appears in that assistant turn.
+5. Treat selected tool calls as fire-and-forget if your registry marks them with
+   `noResponse`.
+6. Continue only when `[next /]` appears in that assistant turn.
 
 Example:
   python examples/inference_loop_demo.py \
@@ -148,6 +150,10 @@ def run_demo_loop(args: argparse.Namespace) -> None:
         continue_requested = False
 
         for tag, result in zip(tags, results):
+            if tag.namespace and captainhook.get_no_response(tag.namespace, tag.action):
+                # Fire-and-forget tool outputs are not appended back into model context.
+                continue
+
             results_payload.append({tag.raw: result})
 
             if tag.action == "next" and isinstance(result, dict) and result.get("_control") == "next":

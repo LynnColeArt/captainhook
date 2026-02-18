@@ -22,6 +22,7 @@ class Context:
     def __init__(self):
         self._handlers: Dict[str, Callable] = {}
         self._namespace_handlers: Dict[str, Any] = {}
+        self._namespace_metadata: Dict[str, Dict[str, Any]] = {}
         self._container_handlers: Dict[str, Callable] = {}
         self.hooks = Hooks()
         self.filters = Filters()
@@ -45,11 +46,21 @@ class Context:
             return func
         return decorator
 
-    def register_namespace(self, namespace: str, handler: Any):
-        """Register a Busy-style namespace handler for `[namespace:action /]`."""
+    def register_namespace(self, namespace: str, handler: Any, metadata: Optional[Dict[str, Any]] = None):
+        """Register a Busy-style namespace handler for `[namespace:action /]`.
+
+        Optional metadata supports execution hints consumed by Busy38-style runtimes.
+
+        Supported keys:
+        - `noResponse` or `no_response`: suppresses automatic follow-up
+          assistant responses when this namespace/action executes.
+        - `actions`: optional per-action metadata map, for example:
+          `{"actions": {"emit": {"noResponse": True}}}`.
+        """
         if namespace in self._namespace_handlers:
             raise ValueError(f"Namespace '{namespace}' is already registered")
         self._namespace_handlers[namespace] = handler
+        self._namespace_metadata[namespace] = dict(metadata) if isinstance(metadata, Dict) else {}
         return handler
 
     def _resolve_namespace_handler(self, namespace: str):
@@ -64,11 +75,54 @@ class Context:
         except Exception:
             return None
 
+    def _resolve_namespace_metadata(self, namespace: str) -> Dict[str, Any]:
+        local_metadata = self._namespace_metadata.get(namespace)
+        if isinstance(local_metadata, Dict):
+            local_payload = dict(local_metadata)
+        else:
+            local_payload = {}
+        try:
+            from .busy_bridge import get_namespace_metadata
+            bridge_metadata = get_namespace_metadata(namespace)
+            local_payload.update(bridge_metadata or {})
+            return local_payload
+        except Exception:
+            return local_payload
+
+    def get_no_response(self, namespace: str, action: str) -> bool:
+        """Return whether this namespace/action should suppress orchestrator follow-up replies."""
+        metadata = self._resolve_namespace_metadata(namespace)
+        if not metadata:
+            return False
+
+        for data in (self._extract_action_metadata(metadata, action), metadata):
+            value = data.get("noResponse", data.get("no_response"))
+            if isinstance(value, bool):
+                return value
+        return False
+
+    @staticmethod
+    def _extract_action_metadata(metadata: Dict[str, Any], action: str) -> Dict[str, Any]:
+        if not metadata:
+            return {}
+        action_name = str(action or "").strip()
+        action_name_lc = action_name.lower()
+        for container_name in ("actions", "action_metadata", "action_metadata_by_name"):
+            actions = metadata.get(container_name)
+            if not isinstance(actions, Dict):
+                continue
+            if action_name in actions and isinstance(actions[action_name], Dict):
+                return dict(actions[action_name])
+            if action_name_lc in actions and isinstance(actions[action_name_lc], Dict):
+                return dict(actions[action_name_lc])
+        return {}
+
     def unregister_namespace(self, namespace: str) -> None:
         """Unregister a namespace handler."""
         if namespace not in self._namespace_handlers:
             raise KeyError(f"Namespace '{namespace}' is not registered")
         del self._namespace_handlers[namespace]
+        self._namespace_metadata.pop(namespace, None)
 
     def execute_cheatcode(self, namespace: str, action: str, attributes: Optional[Dict[str, Any]] = None):
         """Execute a namespace handler directly."""
@@ -263,13 +317,13 @@ def execute_text(text: str, **kwargs) -> List[Any]:
     return _global_context.execute_text(text, **kwargs)
 
 
-def register_namespace(namespace: str, handler: Any):
+def register_namespace(namespace: str, handler: Any, metadata: Optional[Dict[str, Any]] = None):
     """Register a Busy-compatible namespace handler."""
     try:
         from .busy_bridge import register_namespace as register_bridge_namespace
-        register_bridge_namespace(namespace, handler)
+        register_bridge_namespace(namespace, handler, metadata=metadata)
     except Exception:
-        _global_context.register_namespace(namespace, handler)
+        _global_context.register_namespace(namespace, handler, metadata=metadata)
     return handler
 
 
@@ -289,6 +343,11 @@ def execute_cheatcode(namespace: str, action: str, attributes: Optional[Dict[str
         return execute_bridge_cheatcode(namespace, action, attributes)
     except Exception:
         return _global_context.execute_cheatcode(namespace, action, attributes)
+
+
+def get_no_response(namespace: str, action: str) -> bool:
+    """Return whether a namespace action is marked no-response."""
+    return _global_context.get_no_response(namespace, action)
 
 
 async def execute_async(tag_string: str, **kwargs) -> Any:

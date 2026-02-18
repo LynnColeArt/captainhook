@@ -194,23 +194,38 @@ class NamespaceRegistry:
 
     def __init__(self) -> None:
         self._handlers: Dict[str, NamespaceHandler] = {}
+        self._metadata: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.RLock()
 
-    def register(self, namespace: str, handler: NamespaceHandler) -> None:
+    def register(
+        self,
+        namespace: str,
+        handler: NamespaceHandler,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         with self._lock:
             if namespace in self._handlers:
                 raise ValueError(f"Namespace '{namespace}' is already registered")
             self._handlers[namespace] = handler
+            self._metadata[namespace] = dict(metadata) if isinstance(metadata, Dict) else {}
 
     def unregister(self, namespace: str) -> None:
         with self._lock:
             if namespace not in self._handlers:
                 raise KeyError(f"Namespace '{namespace}' is not registered")
             self._handlers.pop(namespace)
+            self._metadata.pop(namespace, None)
 
     def get(self, namespace: str) -> Optional[NamespaceHandler]:
         with self._lock:
             return self._handlers.get(namespace)
+
+    def get_metadata(self, namespace: str) -> Dict[str, Any]:
+        with self._lock:
+            raw = self._metadata.get(namespace, {})
+            if isinstance(raw, Dict):
+                return dict(raw)
+            return {}
 
     def execute(self, namespace: str, action: str, attributes: Optional[Dict[str, Any]] = None) -> Any:
         handler = self.get(namespace)
@@ -226,6 +241,7 @@ class NamespaceRegistry:
     def clear(self) -> None:
         with self._lock:
             self._handlers.clear()
+            self._metadata.clear()
 
     def list_namespaces(self) -> List[str]:
         with self._lock:
@@ -363,8 +379,12 @@ def get_busy38_stats() -> Dict[str, Any]:
     return busy38_hooks.get_stats()
 
 
-def register_namespace(namespace: str, handler: NamespaceHandler) -> None:
-    cheatcode_registry.register(namespace, handler)
+def register_namespace(
+    namespace: str,
+    handler: NamespaceHandler,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    cheatcode_registry.register(namespace, handler, metadata=metadata)
 
 
 def unregister_namespace(namespace: str) -> None:
@@ -381,6 +401,53 @@ def get_registry() -> NamespaceRegistry:
 
 def execute_cheatcode(namespace: str, action: str, attributes: Optional[Dict[str, Any]] = None) -> Any:
     return cheatcode_registry.execute(namespace, action, attributes)
+
+
+def _as_metadata_dict(metadata: Any) -> Dict[str, Any]:
+    if metadata is None:
+        return {}
+    if isinstance(metadata, Dict):
+        return dict(metadata)
+    if hasattr(metadata, "__dict__") and isinstance(metadata.__dict__, Dict):
+        return dict(metadata.__dict__)
+    if hasattr(metadata, "as_dict"):
+        candidate = metadata.as_dict()
+        if isinstance(candidate, Dict):
+            return dict(candidate)
+    return {}
+
+
+def _extract_action_metadata(metadata: Dict[str, Any], action: str) -> Dict[str, Any]:
+    if not metadata:
+        return {}
+
+    action_name = str(action or "").strip()
+    action_name_lc = action_name.lower()
+    for container_name in ("actions", "action_metadata", "action_metadata_by_name"):
+        actions = metadata.get(container_name)
+        if not isinstance(actions, Dict):
+            continue
+        if action_name in actions and isinstance(actions[action_name], Dict):
+            return _as_metadata_dict(actions[action_name])
+        if action_name_lc in actions and isinstance(actions[action_name_lc], Dict):
+            return _as_metadata_dict(actions[action_name_lc])
+    return {}
+
+
+def get_namespace_metadata(namespace: str) -> Dict[str, Any]:
+    return cheatcode_registry.get_metadata(namespace)
+
+
+def should_suppress_cheatcode_response(namespace: str, action: str) -> bool:
+    metadata = get_namespace_metadata(namespace)
+    if not metadata:
+        return False
+
+    for data in (_extract_action_metadata(metadata, action), metadata):
+        no_response = data.get("noResponse", data.get("no_response"))
+        if isinstance(no_response, bool):
+            return bool(no_response)
+    return False
 
 
 def remove_all_actions(hook_name: str) -> bool:
@@ -437,6 +504,8 @@ __all__ = [
     "get_namespace",
     "get_registry",
     "execute_cheatcode",
+    "get_namespace_metadata",
+    "should_suppress_cheatcode_response",
     "remove_all_actions",
     "remove_all_filters",
     "remove_action",

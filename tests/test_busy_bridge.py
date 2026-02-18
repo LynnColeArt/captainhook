@@ -12,11 +12,13 @@ from captainhook import (
     busy38_hooks,
     HookPoints,
     register_namespace,
+    get_no_response,
     unregister_namespace,
     get_namespace,
     execute_cheatcode,
     list_busy38_hooks,
     get_busy38_stats,
+    should_suppress_cheatcode_response,
 )
 
 
@@ -76,6 +78,62 @@ class TestBusyBridgeNamespace:
             assert result == {"ok": True, "action": "check", "value": "x"}
         finally:
             unregister_namespace("asyncprobe")
+
+    def test_namespace_level_no_response_metadata(self):
+        class Probe:
+            def execute(self, action, **kwargs):
+                return {"ok": True, "action": action, **kwargs}
+
+        register_namespace("noreply", Probe(), metadata={"noResponse": True})
+        try:
+            assert get_no_response("noreply", "anything") is True
+        finally:
+            unregister_namespace("noreply")
+
+    def test_namespace_level_no_response_uses_snake_case_key(self):
+        class Probe:
+            def execute(self, action, **kwargs):
+                return {"ok": True, "action": action, **kwargs}
+
+        register_namespace("snakecase", Probe(), metadata={"no_response": True})
+        try:
+            assert should_suppress_cheatcode_response("snakecase", "anything") is True
+            assert get_no_response("snakecase", "anything") is True
+        finally:
+            unregister_namespace("snakecase")
+
+    def test_action_level_no_response_overrides_namespace_default(self):
+        class Probe:
+            def execute(self, action, **kwargs):
+                return {"ok": True, "action": action, **kwargs}
+
+        register_namespace(
+            "actionreply",
+            Probe(),
+            metadata={
+                "noResponse": False,
+                "actions": {
+                    "silent": {"noResponse": True},
+                    "loud": {"noResponse": False},
+                },
+            },
+        )
+        try:
+            assert get_no_response("actionreply", "silent") is True
+            assert get_no_response("actionreply", "loud") is False
+            assert get_no_response("actionreply", "unknown") is False
+        finally:
+            unregister_namespace("actionreply")
+
+        register_namespace(
+            "actionreply2",
+            Probe(),
+            metadata={"noResponse": True, "actions": {"silent": {"noResponse": False}}},
+        )
+        try:
+            assert get_no_response("actionreply2", "silent") is False
+        finally:
+            unregister_namespace("actionreply2")
 
 
 class TestBusyBridgeHooks:

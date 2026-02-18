@@ -111,6 +111,48 @@ async def fetch_data(url):
 result = await captainhook.execute_async("[fetch:data https://api.example.com /]")
 ```
 
+### Async Tool Loops and `noResponse`
+
+Busy-like inference loops can emit multiple tags and control iteration with `[next /]`.
+
+When registering namespace handlers, you can flag actions that should not force
+automatic follow-up agent responses. This is useful for fire-and-forget tool work.
+
+```python
+import captainhook
+
+
+class AgentTools:
+    def execute(self, action, **kwargs):
+        if action == "fire_and_forget":
+            return {"status": "queued", "payload": kwargs}
+        if action == "compute":
+            return {"status": "done", "payload": kwargs}
+        raise ValueError(f"Unknown action: {action}")
+
+
+captainhook.register_namespace(
+    "agent_tools",
+    AgentTools(),
+    metadata={
+        "noResponse": False,
+        "actions": {
+            "compute": {"noResponse": False},
+            "fire_and_forget": {"noResponse": True},
+        },
+    },
+)
+
+result = captainhook.execute("[agent_tools:compute x=1 /]")
+print(captainhook.get_no_response("agent_tools", "compute"))  # False
+
+result = captainhook.execute("[agent_tools:fire_and_forget x=1 /]")
+print(captainhook.get_no_response("agent_tools", "fire_and_forget"))  # True
+```
+
+Use `get_no_response(namespace, action)` as a cue filter before appending tool output
+back into the model context.
+
 ### Hooks and Filters
 
 ```python
