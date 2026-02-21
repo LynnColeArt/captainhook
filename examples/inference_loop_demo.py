@@ -1,7 +1,7 @@
 """Busy-style inference loop demo using CaptainHook.
 
 This script connects to an OpenAI-compatible inference endpoint and runs a
-turn-based loop. The model is prompted to emit a small set of cheatcodes and
+turn-based loop. The model is prompted to emit namespaced tool tags and
 `[next /]` as the control-flow tag to continue.
 
 How to read this file:
@@ -122,6 +122,7 @@ def run_demo_loop(args: argparse.Namespace) -> None:
     # - system prompt (tool contract)
     # - original user request
     # - assistant text and tool outputs from previous turns
+    continue_tag = "[next /]"
     messages: List[Dict[str, str]] = [
         {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": args.prompt},
@@ -150,14 +151,15 @@ def run_demo_loop(args: argparse.Namespace) -> None:
         continue_requested = False
 
         for tag, result in zip(tags, results):
+            if tag.raw == continue_tag:
+                continue_requested = True
+                continue
+
             if tag.namespace and captainhook.get_no_response(tag.namespace, tag.action):
                 # Fire-and-forget tool outputs are not appended back into model context.
                 continue
 
             results_payload.append({tag.raw: result})
-
-            if tag.action == "next" and isinstance(result, dict) and result.get("_control") == "next":
-                continue_requested = True
 
         print(f"Tool results: {json.dumps(results_payload, indent=2)}")
 
