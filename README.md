@@ -85,7 +85,7 @@ Busy38 and CaptainHook should treat this according to explicit policy:
 flowchart TD
   A[LLM payload text] --> B{Container parse}
   B -->|closed container found| C{Scope policy}
-  C -->|strict(default)| D[Capture as data]
+  C -->|strict default| D["Capture as data"]
   C -->|explicit opt-in| E[Allow control extraction]
   D --> F[No tool execution]
   E --> G[Execute per registry checks]
@@ -102,7 +102,7 @@ flowchart TD
   C --> D[Do not append to follow-up context]
   B -->|no| E[Run action]
   E --> F[Append tool summary to context]
-  D --> G[Loop decision from explicit [next /]]
+  D --> G["Loop decision from explicit next control"]
   F --> G
 ```
 
@@ -289,12 +289,12 @@ When you mix extension styles, keep one policy:
 
 ```mermaid
 flowchart LR
-  A[register()] --> B{Path}
-  B -->|local context| C[Context.hooks / Context.filters]
+  A["register()"] --> B{Path}
+  B -->|local context| C[Context hooks + filters]
   B -->|bridge compatibility| D[busy38_hooks API]
   C --> E[Execute handler]
   D --> E
-  E --> F[remove_action/remove_filter by contract]
+  E --> F[remove_action and remove_filter by contract]
 ```
 
 ### Suggested guardrails for library consumers
