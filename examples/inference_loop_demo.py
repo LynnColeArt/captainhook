@@ -8,7 +8,7 @@ How to read this file:
 1. Register tool handlers with `@captainhook.register(...)`.
 2. Send a user prompt to a chat-completion endpoint.
 3. Parse returned text for CaptainHook tags.
-4. Execute all tags with `captainhook.execute_text(...)`.
+4. Parse tags and execute only tool tags directly (skip `[next /]` as control).
 5. Treat selected tool calls as fire-and-forget if your registry marks them with
    `noResponse`.
 6. Continue only when `[next /]` appears in that assistant turn.
@@ -50,15 +50,6 @@ def tool_note(message: str = "") -> Dict[str, Any]:
     """Simple logging tool."""
     TOOLS_STATE["step"] += 1
     return {"tool": "note", "message": message, "step": TOOLS_STATE["step"]}
-
-
-@captainhook.register("next")
-def control_next() -> Dict[str, Any]:
-    """Busy-style continue marker.
-
-    Returning structured output makes it easy to inspect what happened.
-    """
-    return {"_control": "next"}
 
 
 def call_inference(
@@ -145,16 +136,15 @@ def run_demo_loop(args: argparse.Namespace) -> None:
             print("No tags found in response. Ending loop.")
             break
 
-        # Execute all tags found in this turn.
-        results = captainhook.execute_text(model_text)
+        # Execute tool tags only. `next` is treated as control, not as an executable tag.
         results_payload = []
         continue_requested = False
-
-        for tag, result in zip(tags, results):
+        for tag in tags:
             if tag.raw == continue_tag:
                 continue_requested = True
                 continue
 
+            result = captainhook.execute(tag.raw)
             if tag.namespace and captainhook.get_no_response(tag.namespace, tag.action):
                 # Fire-and-forget tool outputs are not appended back into model context.
                 continue
