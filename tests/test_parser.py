@@ -1,9 +1,4 @@
-"""
-Tests for CaptainHook parser.
-"""
-
-import sys
-sys.path.insert(0, '..')
+"""Tests for CaptainHook parser."""
 
 import pytest
 from captainhook.parser import (

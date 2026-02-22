@@ -1,9 +1,4 @@
-"""
-Tests for CaptainHook core execution.
-"""
-
-import sys
-sys.path.insert(0, '..')
+"""Tests for CaptainHook core execution."""
 
 import pytest
 from captainhook import Context, register, register_container, execute, execute_text

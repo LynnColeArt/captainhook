@@ -2,13 +2,10 @@
 Tests for Busy38 compatibility hooks and namespace registry.
 """
 
-import sys
 import asyncio
 import os
 
 import pytest
-
-sys.path.insert(0, "..")
 
 from captainhook import (
     Context,

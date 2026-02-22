@@ -25,9 +25,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import captainhook
 
