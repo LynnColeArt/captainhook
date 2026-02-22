@@ -7,7 +7,12 @@ sys.path.insert(0, '..')
 
 import pytest
 from captainhook.parser import (
-    Tag, TagType, parse_tag, parse_all, is_valid_tag,
+    ParseError,
+    Tag,
+    TagType,
+    parse_tag,
+    parse_all,
+    is_valid_tag,
     parse_container_tags, parse_cheatcodes, parse_self_closing
 )
 
@@ -45,6 +50,10 @@ class TestParser:
         assert tag.action == "run"
         assert tag.attributes["command"] == "ls"
         assert tag.attributes["timeout"] == "30"
+
+    def test_parse_escaped_attribute_value(self):
+        tag = parse_tag('[tool:run command="say \\"hello\\"" /]')
+        assert tag.attributes["command"] == 'say "hello"'
     
     def test_parse_all_multiple_tags(self):
         """Test parsing multiple tags from text."""
@@ -67,6 +76,19 @@ class TestParser:
         assert is_valid_tag("[echo]content[/echo]") is True
         assert is_valid_tag("not a tag") is False
         assert is_valid_tag("[incomplete") is False
+
+    def test_parse_tag_rejects_malformed(self):
+        """Malformed markup should fail closed."""
+        with pytest.raises(ParseError):
+            parse_tag("[mission]unclosed")
+
+    def test_container_payload_remains_data(self):
+        """Nested control-like payload should stay content by default."""
+        tags = parse_all("[mission]Draft this from [agent_tools:run x=1 /][/mission]")
+        assert len(tags) == 1
+        assert tags[0].tag_type == TagType.DOUBLE
+        assert tags[0].action == "mission"
+        assert "[agent_tools:run" in tags[0].raw
 
 
 if __name__ == "__main__":

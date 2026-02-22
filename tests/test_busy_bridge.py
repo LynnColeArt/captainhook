@@ -4,6 +4,9 @@ Tests for Busy38 compatibility hooks and namespace registry.
 
 import sys
 import asyncio
+import os
+
+import pytest
 
 sys.path.insert(0, "..")
 
@@ -63,6 +66,18 @@ class TestBusyBridgeNamespace:
             assert handler.calls == [("status", {"value": "alive"})]
         finally:
             unregister_namespace("ctxprobe")
+
+    def test_action_allowlist_blocks_unknown_action(self):
+        class Probe:
+            def execute(self, action, **kwargs):
+                return {"ok": True, "action": action, **kwargs}
+
+        register_namespace("strict", Probe(), metadata={"allowed_actions": ["ping"]})
+        try:
+            with pytest.raises(ValueError):
+                execute_cheatcode("strict", "pong", {"value": "x"})
+        finally:
+            unregister_namespace("strict")
 
     def test_async_namespace_execution_from_execute_async(self):
         class AsyncProbe:
@@ -148,19 +163,19 @@ class TestBusyBridgeHooks:
         def post(namespace, action, result, context=None):
             events.append(("post", namespace, action, context.get("phase")))
 
-        pre_id = busy38_hooks.add_action(HookPoints.PRE_CHEATCODE_EXECUTE, pre, priority=10)
-        post_id = busy38_hooks.add_action(HookPoints.POST_CHEATCODE_EXECUTE, post, priority=10)
+        pre_id = busy38_hooks.add_action(HookPoints.PRE_TOOL_EXECUTE, pre, priority=10)
+        post_id = busy38_hooks.add_action(HookPoints.POST_TOOL_EXECUTE, post, priority=10)
 
         try:
             busy38_hooks.do_action(
-                HookPoints.PRE_CHEATCODE_EXECUTE,
+                HookPoints.PRE_TOOL_EXECUTE,
                 "n1",
                 "a1",
                 {"value": "1"},
                 context={"phase": "before"},
             )
             busy38_hooks.do_action(
-                HookPoints.POST_CHEATCODE_EXECUTE,
+                HookPoints.POST_TOOL_EXECUTE,
                 "n1",
                 "a1",
                 {"ok": True},
@@ -169,8 +184,8 @@ class TestBusyBridgeHooks:
 
             assert events == [("pre", "n1", "a1", "before"), ("post", "n1", "a1", "after")]
         finally:
-            busy38_hooks.remove_action(HookPoints.PRE_CHEATCODE_EXECUTE, pre_id)
-            busy38_hooks.remove_action(HookPoints.POST_CHEATCODE_EXECUTE, post_id)
+            busy38_hooks.remove_action(HookPoints.PRE_TOOL_EXECUTE, pre_id)
+            busy38_hooks.remove_action(HookPoints.POST_TOOL_EXECUTE, post_id)
 
     def test_hook_registry_introspection(self):
         action_id = busy38_hooks.add_action("bridge:inspect", lambda value: value)
@@ -183,3 +198,26 @@ class TestBusyBridgeHooks:
             assert "total_filters" in stats
         finally:
             busy38_hooks.remove_action("bridge:inspect", action_id)
+
+    def test_critical_hook_removal_requires_token(self):
+        event = []
+
+        def _blocked(*_args, **_kwargs):
+            event.append("blocked")
+
+        action_id = busy38_hooks.add_action(HookPoints.PRE_CHEATCODE_EXECUTE, _blocked, priority=10)
+        try:
+            with pytest.raises(PermissionError):
+                busy38_hooks.remove_action(HookPoints.PRE_CHEATCODE_EXECUTE, action_id)
+        finally:
+            # If env token not set, critical hooks are intentionally immutable.
+            token = os.getenv("CAPTAINHOOK_HOOK_REMOVAL_TOKEN", "").strip()
+            if token:
+                assert busy38_hooks.remove_action(
+                    HookPoints.PRE_CHEATCODE_EXECUTE,
+                    action_id,
+                    allow_critical=True,
+                    removal_token=token,
+                )
+            else:
+                assert event == []

@@ -357,9 +357,9 @@ It is about making agent control behavior *auditable and hard to break*.
 
 ## 7) QA and testing
 
-Busy38 side assessment and findings are tracked here:
+Tag safety assessment and findings are tracked here:
 
-- `busy-38-ongoing/docs/internal/TAG_ASSESSMENT_QA.md`
+- `docs/internal/TAG_ASSESSMENT_QA.md`
 
 Run local tests:
 

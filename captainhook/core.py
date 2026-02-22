@@ -1,62 +1,80 @@
-"""
-Core execution engine for CaptainHook.
+"""Core execution engine for CaptainHook."""
 
-Reference: Busy38 core/cheatcodes/registry.py
-"""
+from __future__ import annotations
 
 import asyncio
 import inspect
-from typing import Callable, Dict, Any, Optional, List
-from .parser import Tag, TagType, parse_all, parse_tag
+from types import MappingProxyType
+from typing import Any, Callable, Dict, List, Optional
+
+from .parser import ParseError, Tag, TagType, parse_all, parse_tag
 from .hooks import Hooks
 from .filters import Filters
 
 
+def _freeze_kwargs(values: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(MappingProxyType(dict(values)))
+
+
+def _validate_identifier(value: str) -> None:
+    if not value:
+        raise ValueError("Empty identifier is not allowed")
+    if value.startswith("__") or value.endswith("__"):
+        raise ValueError(f"Invalid identifier '{value}'")
+    if not (value[0].isalpha() or value[0] == "_"):
+        raise ValueError(f"Invalid identifier '{value}'")
+    for char in value:
+        if not (char.isalnum() or char in {"_", "-"}):
+            raise ValueError(f"Invalid identifier '{value}'")
+
+
+def _merge_call_kwargs(tag_attrs: Dict[str, str], runtime_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    overlap = set(tag_attrs) & set(runtime_kwargs)
+    if overlap:
+        raise ValueError(f"Tag data overlaps runtime keys: {sorted(overlap)}")
+    merged = dict(runtime_kwargs)
+    merged.update(tag_attrs)
+    return _freeze_kwargs(merged)
+
+
+def _validate_tag_values(tag: Tag) -> None:
+    _validate_identifier(tag.action)
+    if tag.namespace is not None:
+        _validate_identifier(tag.namespace)
+    for key in tag.attributes:
+        _validate_identifier(key)
+
+
 class Context:
     """
-    Isolated execution context for tags.
-    
-    Similar to Busy38's NamespaceRegistry - each context has its own handlers.
+    Isolated execution context for CaptainHook control tags.
     """
-    
-    def __init__(self):
+
+    def __init__(self, apply_filters: bool = False):
         self._handlers: Dict[str, Callable] = {}
         self._namespace_handlers: Dict[str, Any] = {}
         self._namespace_metadata: Dict[str, Dict[str, Any]] = {}
         self._container_handlers: Dict[str, Callable] = {}
+        self._apply_filters = apply_filters
         self.hooks = Hooks()
         self.filters = Filters()
-    
+
     def register(self, pattern: str):
-        """
-        Decorator to register a handler.
-        
-        Patterns:
-        - "action" - Self-closing tag [action /]
-        - "ns:action" - Cheatcode [ns:action ... /]
-        - "tag" (with content param) - Container [tag]content[/tag]
-        """
+        if ":" in pattern:
+            namespace, action = pattern.split(":", 1)
+            _validate_identifier(namespace)
+            _validate_identifier(action)
+        else:
+            _validate_identifier(pattern)
+
         def decorator(func: Callable):
-            if ':' in pattern:
-                # Cheatcode: namespace:action
-                self._handlers[pattern] = func
-            else:
-                # Simple tag or container
-                self._handlers[pattern] = func
+            self._handlers[pattern] = func
             return func
+
         return decorator
 
     def register_namespace(self, namespace: str, handler: Any, metadata: Optional[Dict[str, Any]] = None):
-        """Register a Busy-style namespace handler for `[namespace:action /]`.
-
-        Optional metadata supports execution hints consumed by Busy38-style runtimes.
-
-        Supported keys:
-        - `noResponse` or `no_response`: suppresses automatic follow-up
-          assistant responses when this namespace/action executes.
-        - `actions`: optional per-action metadata map, for example:
-          `{"actions": {"emit": {"noResponse": True}}}`.
-        """
+        _validate_identifier(namespace)
         if namespace in self._namespace_handlers:
             raise ValueError(f"Namespace '{namespace}' is already registered")
         self._namespace_handlers[namespace] = handler
@@ -64,25 +82,22 @@ class Context:
         return handler
 
     def _resolve_namespace_handler(self, namespace: str):
-        """Resolve a namespace handler from local or global registry."""
         handler = self._namespace_handlers.get(namespace)
         if handler is not None:
             return handler
-
         try:
             from .busy_bridge import get_namespace
+
             return get_namespace(namespace)
         except Exception:
             return None
 
     def _resolve_namespace_metadata(self, namespace: str) -> Dict[str, Any]:
         local_metadata = self._namespace_metadata.get(namespace)
-        if isinstance(local_metadata, Dict):
-            local_payload = dict(local_metadata)
-        else:
-            local_payload = {}
+        local_payload = dict(local_metadata) if isinstance(local_metadata, Dict) else {}
         try:
             from .busy_bridge import get_namespace_metadata
+
             bridge_metadata = get_namespace_metadata(namespace)
             local_payload.update(bridge_metadata or {})
             return local_payload
@@ -90,11 +105,9 @@ class Context:
             return local_payload
 
     def get_no_response(self, namespace: str, action: str) -> bool:
-        """Return whether this namespace/action should suppress orchestrator follow-up replies."""
         metadata = self._resolve_namespace_metadata(namespace)
         if not metadata:
             return False
-
         for data in (self._extract_action_metadata(metadata, action), metadata):
             value = data.get("noResponse", data.get("no_response"))
             if isinstance(value, bool):
@@ -118,238 +131,216 @@ class Context:
         return {}
 
     def unregister_namespace(self, namespace: str) -> None:
-        """Unregister a namespace handler."""
         if namespace not in self._namespace_handlers:
             raise KeyError(f"Namespace '{namespace}' is not registered")
         del self._namespace_handlers[namespace]
         self._namespace_metadata.pop(namespace, None)
 
     def execute_cheatcode(self, namespace: str, action: str, attributes: Optional[Dict[str, Any]] = None):
-        """Execute a namespace handler directly."""
+        _validate_identifier(namespace)
+        _validate_identifier(action)
         handler = self._resolve_namespace_handler(namespace)
         if handler is None:
             raise KeyError(f"Namespace '{namespace}' is not registered")
         if not hasattr(handler, "execute"):
             raise TypeError(f"Namespace handler for '{namespace}' is missing execute(action, **kwargs)")
-        return handler.execute(action, **(attributes or {}))
-    
+        attrs = dict(attributes or {})
+        for key in attrs:
+            _validate_identifier(key)
+        return handler.execute(action, **_freeze_kwargs(attrs))
+
     def register_container(self, tag_name: str):
-        """Register a handler for container tags [tag]content[/tag]."""
+        _validate_identifier(tag_name)
+
         def decorator(func: Callable):
             self._container_handlers[tag_name] = func
             return func
+
         return decorator
-    
+
     def execute_text(self, text: str, **kwargs) -> List[Any]:
-        """Execute all tags found in text."""
         tags = parse_all(text)
         results = []
-        
         for tag in tags:
             try:
-                result = self.execute_tag(tag, **kwargs)
-                results.append(result)
-            except Exception as e:
-                results.append({"error": str(e), "tag": tag.raw})
-        
+                results.append(self.execute_tag(tag, **kwargs))
+            except Exception as exc:
+                results.append({"error": str(exc), "tag": tag.raw})
         return results
 
     def execute(self, tag_string: str, **kwargs) -> Any:
-        """Execute a single tag string."""
         tag = parse_tag(tag_string)
         return self.execute_tag(tag, **kwargs)
-    
+
     def execute_tag(self, tag: Tag, **kwargs) -> Any:
-        """Execute a single tag."""
-        # Run before_execute hook
-        self.hooks.do_action("before_execute", tag, **kwargs)
-        
-        # Find and execute handler
+        _validate_tag_values(tag)
+        safe_kwargs = _freeze_kwargs(kwargs)
+        self.hooks.do_action("before_execute", tag, **safe_kwargs)
         if tag.tag_type == TagType.DOUBLE:
             result = self._execute_container(tag, **kwargs)
         elif tag.tag_type == TagType.CHEATCODE:
             result = self._execute_cheatcode(tag, **kwargs)
         else:
             result = self._execute_simple(tag, **kwargs)
-        
-        # Apply filters
-        result = self.filters.apply_filters("result", result, tag)
-        
-        # Run after_execute hook
-        self.hooks.do_action("after_execute", tag, result, **kwargs)
-        
+        if self._apply_filters:
+            result = self.filters.apply_filters("result", result, tag, **safe_kwargs)
+        self.hooks.do_action("after_execute", tag, result, **safe_kwargs)
         return result
-    
+
     def _execute_container(self, tag: Tag, **kwargs) -> Any:
-        """Execute a container tag [tag]content[/tag]."""
         handler = self._container_handlers.get(tag.action)
         if not handler:
             raise ValueError(f"No container handler for '{tag.action}'")
-        
-        return handler(tag.content, **kwargs)
-    
+        return handler(tag.content, **_freeze_kwargs(kwargs))
+
     def _execute_cheatcode(self, tag: Tag, **kwargs) -> Any:
-        """Execute a cheatcode [ns:action ... /]."""
         key = f"{tag.namespace}:{tag.action}"
-        handler = self._handlers.get(key)
-        ns_handler = None
+        local_handler = self._handlers.get(key)
+
+        safe_kwargs = _freeze_kwargs(kwargs)
+        call_context = {"tag": tag, "namespace": tag.namespace, "action": tag.action}
+        call_context.update(safe_kwargs)
 
         try:
             from .busy_bridge import emit as emit_compat, HookPoints
+
             emit_compat(
                 HookPoints.PRE_CHEATCODE_EXECUTE,
                 tag.namespace,
                 tag.action,
                 tag.attributes,
-                context={"tag": tag, "namespace": tag.namespace, "action": tag.action, **kwargs},
+                context=call_context,
             )
         except Exception:
             pass
-        
-        if not handler:
-            ns = str(tag.namespace)
-            ns_handler = self._resolve_namespace_handler(ns)
-            if not ns_handler:
+
+        if local_handler is None:
+            namespace = str(tag.namespace)
+            ns_handler = self._resolve_namespace_handler(namespace)
+            if ns_handler is None:
                 raise ValueError(f"No handler for cheatcode '{key}'")
             if not hasattr(ns_handler, "execute"):
-                raise ValueError(f"Namespace handler for '{ns}' has no execute() method")
-            result = ns_handler.execute(tag.action, **{**tag.attributes, **kwargs})
+                raise ValueError(f"Namespace handler for '{namespace}' has no execute() method")
+            from .busy_bridge import validate_action_metadata
+
+            validate_action_metadata(namespace, tag.action, self._resolve_namespace_metadata(namespace))
+            result = ns_handler.execute(tag.action, **_merge_call_kwargs(tag.attributes, safe_kwargs))
         else:
-            # Build arguments
             args = tag.params.copy()
-            call_kwargs = {**tag.attributes, **kwargs}
-            result = handler(*args, **call_kwargs)
+            result = local_handler(*args, **_merge_call_kwargs(tag.attributes, safe_kwargs))
 
         try:
             from .busy_bridge import emit as emit_compat, HookPoints
+
             emit_compat(
                 HookPoints.POST_CHEATCODE_EXECUTE,
                 tag.namespace,
                 tag.action,
                 result,
-                context={"tag": tag, "namespace": tag.namespace, "action": tag.action, **kwargs},
+                context=call_context,
             )
         except Exception:
             pass
 
         return result
-    
+
     def _execute_simple(self, tag: Tag, **kwargs) -> Any:
-        """Execute a simple self-closing tag [action /]."""
         handler = self._handlers.get(tag.action)
-        
         if not handler:
             raise ValueError(f"No handler for tag '{tag.action}'")
-        
-        return handler(**kwargs)
-    
+        return handler(**_freeze_kwargs(kwargs))
+
     async def execute_async(self, tag_string: str, **kwargs) -> Any:
-        """Async execution."""
         tag = parse_tag(tag_string)
-        
-        # Run before_execute hook
-        self.hooks.do_action("before_execute", tag, **kwargs)
-        
-        # Find handler
+        safe_kwargs = _freeze_kwargs(kwargs)
+        self.hooks.do_action("before_execute", tag, **safe_kwargs)
+
         if tag.tag_type == TagType.DOUBLE:
             handler = self._container_handlers.get(tag.action)
+            if not handler:
+                raise ValueError(f"No handler for '{tag.action}'")
+            result = handler(tag.content, **safe_kwargs)
         elif tag.tag_type == TagType.CHEATCODE:
             key = f"{tag.namespace}:{tag.action}"
             handler = self._handlers.get(key)
-            if not handler:
-                handler = None
-        else:
-            handler = self._handlers.get(tag.action)
-        
-        if not handler and tag.tag_type != TagType.CHEATCODE:
-            raise ValueError(f"No handler for '{tag.action}'")
-
-        # Execute
-        if tag.tag_type == TagType.DOUBLE:
-            result = handler(tag.content, **kwargs)
-        elif tag.tag_type == TagType.CHEATCODE:
-            ns_handler = self._resolve_namespace_handler(str(tag.namespace))
-            if ns_handler:
+            if handler is None:
+                ns_handler = self._resolve_namespace_handler(str(tag.namespace))
+                if ns_handler is None:
+                    raise ValueError(f"No handler for '{tag.namespace}:{tag.action}'")
                 if not hasattr(ns_handler, "execute"):
                     raise ValueError(f"Namespace handler for '{tag.namespace}' has no execute() method")
-                result = ns_handler.execute(tag.action, **{**tag.attributes, **kwargs})
+                metadata = self._resolve_namespace_metadata(str(tag.namespace))
+                from .busy_bridge import validate_action_metadata
+
+                validate_action_metadata(str(tag.namespace), tag.action, metadata)
+                result = ns_handler.execute(tag.action, **_merge_call_kwargs(tag.attributes, safe_kwargs))
             else:
-                if handler is None:
-                    raise ValueError(f"No handler for cheatcode '{tag.namespace}:{tag.action}'")
-                result = handler(*tag.params, **{**tag.attributes, **kwargs})
+                result = handler(*tag.params, **_merge_call_kwargs(tag.attributes, safe_kwargs))
         else:
-            result = handler(**kwargs)
+            handler = self._handlers.get(tag.action)
+            if not handler:
+                raise ValueError(f"No handler for '{tag.action}'")
+            result = handler(**safe_kwargs)
 
         if inspect.isawaitable(result):
             result = await result
-        
-        # Apply filters
-        result = self.filters.apply_filters("result", result, tag)
-        
-        # Run after_execute hook
-        self.hooks.do_action("after_execute", tag, result, **kwargs)
-        
+        if self._apply_filters:
+            result = self.filters.apply_filters("result", result, tag, **safe_kwargs)
+        self.hooks.do_action("after_execute", tag, result, **safe_kwargs)
         return result
 
 
-# Global context for module-level functions
 _global_context = Context()
 
 
 def register(pattern: str):
-    """Global register decorator."""
     return _global_context.register(pattern)
 
 
 def register_container(tag_name: str):
-    """Global container register decorator."""
     return _global_context.register_container(tag_name)
 
 
 def execute(tag_string: str, **kwargs) -> Any:
-    """Execute a single tag."""
     tag = parse_tag(tag_string)
     return _global_context.execute_tag(tag, **kwargs)
 
 
 def execute_text(text: str, **kwargs) -> List[Any]:
-    """Execute all tags in text."""
     return _global_context.execute_text(text, **kwargs)
 
 
 def register_namespace(namespace: str, handler: Any, metadata: Optional[Dict[str, Any]] = None):
-    """Register a Busy-compatible namespace handler."""
     try:
         from .busy_bridge import register_namespace as register_bridge_namespace
+
         register_bridge_namespace(namespace, handler, metadata=metadata)
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         _global_context.register_namespace(namespace, handler, metadata=metadata)
     return handler
 
 
 def unregister_namespace(namespace: str) -> None:
-    """Unregister a Busy-compatible namespace handler."""
     try:
         from .busy_bridge import unregister_namespace as unregister_bridge_namespace
+
         unregister_bridge_namespace(namespace)
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         _global_context.unregister_namespace(namespace)
 
 
 def execute_cheatcode(namespace: str, action: str, attributes: Optional[Dict[str, Any]] = None):
-    """Execute a namespace handler directly."""
     try:
         from .busy_bridge import execute_cheatcode as execute_bridge_cheatcode
+
         return execute_bridge_cheatcode(namespace, action, attributes)
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         return _global_context.execute_cheatcode(namespace, action, attributes)
 
 
 def get_no_response(namespace: str, action: str) -> bool:
-    """Return whether a namespace action is marked no-response."""
     return _global_context.get_no_response(namespace, action)
 
 
 async def execute_async(tag_string: str, **kwargs) -> Any:
-    """Global async execute."""
     return await _global_context.execute_async(tag_string, **kwargs)

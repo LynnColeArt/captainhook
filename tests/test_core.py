@@ -22,6 +22,17 @@ class TestCore:
         
         result = ctx.execute("[test:action hello /]")
         assert result == "Executed with hello"
+
+    def test_execute_rejects_parameter_smuggling(self):
+        """Overlapping param keys must be rejected between attrs and runtime kwargs."""
+        ctx = Context()
+
+        @ctx.register("safe:set")
+        def set_value(value):
+            return value
+
+        with pytest.raises(ValueError):
+            ctx.execute('[safe:set value="from_tag" /]', value="from_runtime")
     
     def test_container_handler(self):
         """Test container tag execution."""
